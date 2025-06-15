@@ -103,13 +103,13 @@ export const ContactSection: React.FC = () => {
                 </p>
                 <div className="flex justify-center space-x-6">
                     <a href={SOCIAL_LINKS.instagram} target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="text-text hover:text-accent transition-colors">
-                        <InstagramIcon className="w-8 h-8" />
+                        <InstagramIcon className="w-7 h-7" /> {/* Changed from w-8 h-8 */}
                     </a>
                     <a href={SOCIAL_LINKS.twitter} target="_blank" rel="noopener noreferrer" aria-label="X (formerly Twitter)" className="text-text hover:text-accent transition-colors">
-                        <TwitterIcon className="w-8 h-8" />
+                        <TwitterIcon className="w-7 h-7" /> {/* Changed from w-8 h-8 */}
                     </a>
                     <a href={SOCIAL_LINKS.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="text-text hover:text-accent transition-colors">
-                        <LinkedInIcon className="w-8 h-8" />
+                        <LinkedInIcon className="w-7 h-7" /> {/* Changed from w-8 h-8 */}
                     </a>
                 </div>
             </div>

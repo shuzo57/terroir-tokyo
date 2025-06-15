@@ -1,9 +1,11 @@
 
+
 import React, { useEffect, useRef } from 'react';
 import { MISSION_ITEMS_DATA } from '../constants';
 import { MissionItem } from '../types';
 import { AnimatedHeading } from './AnimatedHeading';
 import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger'; // Ensure ScrollTrigger is imported if used directly
 
 export const MissionSection: React.FC = () => {
   const sectionRef = useRef<HTMLElement>(null);
@@ -19,34 +21,64 @@ export const MissionSection: React.FC = () => {
     const mm = gsap.matchMedia();
 
     mm.add("(min-width: 768px)", () => {
+      // Ensure GSAP has calculated dimensions after any style changes
+      gsap.set(track, {clearProps: "x"}); // Clear previous x transform before recalculating
+      itemsRef.current.forEach(item => gsap.set(item, {clearProps: "all"}));
+
+
       let totalItemsWidth = 0;
       itemsRef.current.forEach(item => {
-        totalItemsWidth += item.offsetWidth;
+        if(item) totalItemsWidth += item.offsetWidth;
       });
-      // Ensure gapWidth is not negative if there's only one item or no items.
-      const gapWidth = itemsRef.current.length > 1 ? (itemsRef.current.length - 1) * 32 : 0; // 32px for md:gap-8
-      const scrollDistance = totalItemsWidth + gapWidth - section.offsetWidth + 64; // +64 for some end padding
+      
+      const gapStyle = window.getComputedStyle(track!).getPropertyValue('gap');
+      const gapWidthValue = gapStyle ? parseInt(gapStyle) : 32; // Default to 32px (md:gap-8) if not found
+      
+      const totalGapWidth = itemsRef.current.length > 1 ? (itemsRef.current.length - 1) * gapWidthValue : 0;
+      const contentWidthOnTrack = totalItemsWidth + totalGapWidth;
+      const viewportWidth = section.offsetWidth;
+      
+      let scrollableDistance = Math.max(0, contentWidthOnTrack - viewportWidth);
+      let tl: gsap.core.Timeline | null = null;
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: section,
-          pin: section,
-          scrub: 1,
-          start: 'center center',
-          end: () => `+=${Math.max(0, scrollDistance * 0.7)}`, // Ensure end is not negative
-          // markers: true, 
-        },
-      });
+      if (scrollableDistance > 0) {
+        // Content overflows, enable scrolling
+        gsap.set(track, { x: 0 }); // Start from left edge
 
-      if (scrollDistance > 0) { // Only animate scroll if there's something to scroll
+        tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: section,
+            pin: section,
+            scrub: 1,
+            start: 'center center',
+            end: () => `+=${scrollableDistance}`, // Scroll exactly the overflow amount
+            // markers: true, 
+          },
+        });
+
         tl.to(track, {
-          x: () => -scrollDistance,
+          x: () => -scrollableDistance,
           ease: 'none',
+        });
+      } else {
+        // Content fits, center it
+        const offsetX = (viewportWidth - contentWidthOnTrack) / 2;
+        gsap.set(track, { x: offsetX });
+        // Pin the section even if not scrolling, for consistent behavior & item animations
+        ScrollTrigger.create({
+            trigger: section,
+            pin: section,
+            start: 'center center',
+            end: '+=100%', // Arbitrary short duration as there's no scroll
         });
       }
       
       itemsRef.current.forEach((item) => {
-        gsap.fromTo(item.querySelector('.mission-card-content'),
+        if (!item) return;
+        const itemContent = item.querySelector('.mission-card-content');
+        if (!itemContent) return;
+
+        gsap.fromTo(itemContent,
           { autoAlpha: 0, y: 30 }, 
           { 
             autoAlpha: 1, 
@@ -55,33 +87,44 @@ export const MissionSection: React.FC = () => {
             ease: 'power2.out',
             scrollTrigger: {
               trigger: item,
-              containerAnimation: tl, // Ensures animation syncs with horizontal scroll
-              start: 'left 85%',
+              containerAnimation: tl || undefined, // Pass timeline only if scrolling
+              start: 'left 85%', // Animate when item enters 85% from left (during scroll) or visible
               toggleActions: 'play none none none',
-              // markers: {startColor: "purple", endColor: "fuchsia", indent: 200},
             }
           }
         );
       });
 
       return () => {
-        tl.kill();
-        if (tl.scrollTrigger) tl.scrollTrigger.kill();
-        // Clear GSAP properties from animated elements
+        if (tl && tl.scrollTrigger) tl.scrollTrigger.kill();
+        if (tl) tl.kill();
+        // Kill individual ScrollTriggers for items if any were created without containerAnimation
         itemsRef.current.forEach(item => {
-          const content = item.querySelector('.mission-card-content');
-          if (content) {
-            gsap.killTweensOf(content);
-            gsap.set(content, { clearProps: 'all' });
-          }
+            if (!item) return;
+            const content = item.querySelector('.mission-card-content');
+            if (content) {
+                const itemST = gsap.getTweensOf(content); // Corrected: Use gsap.getTweensOf
+                itemST.forEach(tween => {
+                    if (tween.scrollTrigger) tween.scrollTrigger.kill();
+                    tween.kill();
+                });
+                gsap.set(content, { clearProps: 'all' });
+            }
         });
         if(track) gsap.set(track, {clearProps: 'all'});
-
+        // Ensure all ScrollTriggers associated with the section are killed
+        ScrollTrigger.getAll().forEach(st => {
+            if (st.vars.trigger === section) {
+                st.kill();
+            }
+        });
       };
     });
     
      mm.add("(max-width: 767px)", () => { 
+      // Mobile: simple stagger reveal, no horizontal scroll
       itemsRef.current.forEach((item, index) => {
+        if(!item) return;
         gsap.fromTo(item, 
           { autoAlpha: 0, y: 40 }, 
           { 
@@ -100,12 +143,12 @@ export const MissionSection: React.FC = () => {
       });
       return () => {
         itemsRef.current.forEach(item => {
-            gsap.killTweensOf(item);
-            // Ensure ScrollTrigger instance is killed
+            if(!item) return;
             const itemTweens = gsap.getTweensOf(item);
-            if(itemTweens.length > 0 && itemTweens[0].scrollTrigger){
-                 itemTweens[0].scrollTrigger.kill();
-            }
+            itemTweens.forEach(tween => {
+                if (tween.scrollTrigger) tween.scrollTrigger.kill();
+                tween.kill();
+            });
             gsap.set(item, {clearProps: 'all'});
         });
       };
@@ -127,30 +170,37 @@ export const MissionSection: React.FC = () => {
       
       <div 
         ref={trackRef} 
+        // lg:px-0 ensures track content can go edge-to-edge on large screens.
         className="md:flex md:flex-row md:items-stretch md:gap-8 px-4 sm:px-6 lg:px-0 md:w-max md:will-change-transform"
       >
         {MISSION_ITEMS_DATA.map((item: MissionItem, index: number) => (
           <div
             key={item.id}
             ref={el => { if (el) itemsRef.current[index] = el; }}
-            className="mission-item w-full aspect-[4/3] md:w-[400px] lg:w-[440px] md:aspect-square flex-shrink-0 mb-8 md:mb-0"
+            // Card dimensions: aspect-[4/3] for both mobile and desktop for more height.
+            // Widths: md:w-[400px] lg:w-[440px] slightly reduced to compensate for increased height from aspect ratio if needed, but current widths might be fine.
+            className="mission-item w-full md:w-[440px] lg:w-[480px] aspect-[4/3] md:aspect-[4/3] flex-shrink-0 mb-8 md:mb-0"
           >
-            <div className="relative bg-black rounded-xl shadow-xl hover:shadow-2xl transition-shadow duration-300 overflow-hidden h-full mx-2 md:mx-0">
+            <div className="bg-white rounded-xl shadow-xl hover:shadow-2xl transition-shadow duration-300 overflow-hidden h-full flex flex-col mx-2 md:mx-0">
               {item.imageUrl && (
-                <img 
-                  src={item.imageUrl} 
-                  alt={item.title} 
-                  className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-500 hover:scale-105"
-                />
+                // Image container: Takes 40% of card height.
+                <div className="w-full h-[40%] flex-shrink-0"> 
+                  <img 
+                    src={item.imageUrl} 
+                    alt={item.title} 
+                    className="w-full h-full object-cover transform transition-transform duration-500 hover:scale-105"
+                  />
+                </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent"></div>
-
-              <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-end mission-card-content text-white">
+              
+              {/* Text content area: Takes remaining 60% of card height */}
+              <div className="p-5 md:p-6 flex flex-col flex-grow mission-card-content"> 
                 {item.englishTitle && (
-                  <p className="text-sm font-semibold text-accent mb-1 tracking-wider">{item.englishTitle.toUpperCase()}</p>
+                  <p className="text-xs font-semibold text-accent mb-1 tracking-wider">{item.englishTitle.toUpperCase()}</p>
                 )}
-                <h3 className="text-xl lg:text-2xl font-serif font-semibold mb-2">{item.title}</h3>
-                <p className="text-slate-200 text-sm leading-relaxed line-clamp-3 sm:line-clamp-4">
+                <h3 className="text-lg lg:text-xl font-serif font-semibold mb-2 text-primary">{item.title}</h3>
+                {/* Description: line-clamp-3 should now have enough space */}
+                <p className="text-light-text text-sm leading-relaxed line-clamp-3"> 
                   {item.description}
                 </p>
               </div>
